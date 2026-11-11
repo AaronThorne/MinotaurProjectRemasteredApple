@@ -39,3 +39,7 @@ long-session checks remain pending.
 - The maintainer reports stable playtesting on Apple Silicon Mac, iPad and iPhone.
 - On Mac, replayed controller input verified Start-to-resume in Minotaur Rescue after pausing with A. The Minotron: 2112 and Super Ox Wars integer division repairs passed 8,288 arithmetic calls through the compiled CPU wrapper, including the logged crash states.
 - On the physical iPad Pro, the in-game Games button passed hit testing and returned to the picker from all nine games. A separate device run verified four distinct sprites on launch and after three game returns.
+
+## Gridrunner achievement crash on Mac
+
+The prebuilt 1.4.11 Gridrunner engine stopped in the guest integer division routine immediately after saving an achievement. For 1.4.12, Gridrunner was rebuilt with the same shared division translation used by the source build. Replaying the recorded CPU state returned to the game code, and the signed replacement rendered the title screen with a fresh save. Earning a new achievement in normal play remains to be tested.

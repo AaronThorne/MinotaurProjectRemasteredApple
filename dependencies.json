@@ -1,0 +1,12 @@
+{
+  "runtime": {
+    "url": "https://github.com/jedeyesniv-art/MinotaurProjectRemastered-touchHLE.git",
+    "commit": "666ba85451fe28718b368d4e22683f4bdb92c0ce"
+  },
+  "rust_sdl2": {
+    "url": "https://github.com/touchHLE/rust-sdl2.git",
+    "commit": "b67f98fe6a147773b6f05d50ae775d9fe16561e7"
+  },
+  "tested_rust": "1.99.1",
+  "tested_xcode": "27.2"
+}

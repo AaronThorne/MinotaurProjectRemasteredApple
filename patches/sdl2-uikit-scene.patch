@@ -1,0 +1,19 @@
+diff --git a/SDL/src/video/uikit/SDL_uikitwindow.m b/SDL/src/video/uikit/SDL_uikitwindow.m
+index d2a465b..ce11eac 100644
+--- a/SDL/src/video/uikit/SDL_uikitwindow.m
++++ b/SDL/src/video/uikit/SDL_uikitwindow.m
+@@ -215,6 +215,14 @@ - (void)layoutSubviews
+         /* ignore the size user requested, and make a fullscreen window */
+         /* !!! FIXME: can we have a smaller view? */
+         UIWindow *uiwindow = [[SDL_uikitwindow alloc] initWithFrame:data.uiscreen.bounds];
++        /* Minotaur iPad port: attach SDL's window to the app's current scene. */
++        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
++            if ([scene isKindOfClass:UIWindowScene.class]) {
++                uiwindow.windowScene = (UIWindowScene *)scene;
++                break;
++            }
++        }
++
+ 
+         /* put the window on an external display if appropriate. */
+         if (data.uiscreen != [UIScreen mainScreen]) {

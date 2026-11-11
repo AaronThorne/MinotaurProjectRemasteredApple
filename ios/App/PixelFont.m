@@ -1,0 +1,47 @@
+#import "PixelFont.h"
+
+// A small, literal 5x7 bitmap alphabet: every lit cell is a square pixel.
+static const uint8_t letters[26][7]={
+ {14,17,17,31,17,17,17},{30,17,17,30,17,17,30},{14,17,16,16,16,17,14},
+ {30,17,17,17,17,17,30},{31,16,16,30,16,16,31},{31,16,16,30,16,16,16},
+ {14,17,16,23,17,17,15},{17,17,17,31,17,17,17},{31,4,4,4,4,4,31},
+ {7,2,2,2,18,18,12},{17,18,20,24,20,18,17},{16,16,16,16,16,16,31},
+ {17,27,21,21,17,17,17},{17,25,21,19,17,17,17},{14,17,17,17,17,17,14},
+ {30,17,17,30,16,16,16},{14,17,17,17,21,18,13},{30,17,17,30,20,18,17},
+ {15,16,16,14,1,1,30},{31,4,4,4,4,4,4},{17,17,17,17,17,17,14},
+ {17,17,17,17,17,10,4},{17,17,17,21,21,21,10},{17,17,10,4,10,17,17},
+ {17,17,10,4,4,4,4},{31,1,2,4,8,16,31}
+};
+static const uint8_t digits[10][7]={
+ {14,17,19,21,25,17,14},{4,12,4,4,4,4,14},{14,17,1,2,4,8,31},
+ {30,1,1,14,1,1,30},{2,6,10,18,31,2,2},{31,16,16,30,1,1,30},
+ {14,16,16,30,17,17,14},{31,1,2,4,8,8,8},{14,17,17,14,17,17,14},
+ {14,17,17,15,1,1,14}
+};
+const uint8_t *PixelGlyph(unichar character) {
+    if(character>='a'&&character<='z')character-=32;
+    if(character>='A'&&character<='Z')return letters[character-'A'];
+    if(character>='0'&&character<='9')return digits[character-'0'];
+    static const uint8_t blank[7]={0},dash[7]={0,0,0,31,0,0,0},bang[7]={4,4,4,4,4,0,4};
+    if(character=='-')return dash;if(character=='!')return bang;
+    return blank;
+}
+CGFloat PixelTextWidth(NSString *text,CGFloat pixel) { return text.length?(text.length*6-1)*pixel:0; }
+void DrawPixelText(CGContextRef context,NSString *text,CGPoint origin,CGFloat pixel,UIColor *colour) {
+    CGContextSaveGState(context);CGContextSetShouldAntialias(context,false);
+    CGContextSetFillColorWithColor(context,colour.CGColor);
+    for(NSUInteger i=0;i<text.length;i++) {
+        const uint8_t *rows=PixelGlyph([text characterAtIndex:i]);
+        for(int y=0;y<7;y++)for(int x=0;x<5;x++)if(rows[y]&(1<<(4-x)))
+            CGContextFillRect(context,CGRectMake(origin.x+(i*6+x)*pixel,origin.y+y*pixel,pixel,pixel));
+    }
+    CGContextRestoreGState(context);
+}
+@implementation PixelLabel
+- (CGSize)intrinsicContentSize { return CGSizeMake(PixelTextWidth(self.text,2),14); }
+- (void)drawTextInRect:(CGRect)rect {
+    CGFloat unit=MAX(1,MIN(2,floor(self.bounds.size.width/MAX(1,PixelTextWidth(self.text,1))*2)/2));
+    CGPoint origin=CGPointMake(round((self.bounds.size.width-PixelTextWidth(self.text,unit))/2*2)/2,round((self.bounds.size.height-7*unit)/2*2)/2);
+    DrawPixelText(UIGraphicsGetCurrentContext(),self.text,origin,unit,self.textColor);
+}
+@end

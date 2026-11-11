@@ -1,0 +1,31 @@
+name: Bug report
+description: Report a problem with the Apple adaptation
+body:
+  - type: input
+    id: game
+    attributes:
+      label: Game
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform, device model and OS
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Commit or build version
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps and observed result
+      description: Include the input method and what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Do not upload games, keys, certificates, device IDs or personal saves.

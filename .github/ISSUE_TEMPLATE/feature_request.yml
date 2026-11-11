@@ -1,0 +1,14 @@
+name: Feature request
+description: Suggest an improvement to the Apple port
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to change?
+      description: Describe what players would be able to do or what would feel better.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Game and platform, if applicable

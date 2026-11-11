@@ -1,0 +1,5 @@
+* text=auto
+# Patch context lines intentionally contain a single space; preserve them.
+patches/*.patch -whitespace
+# Preserve the upstream licence verbatim, including its original whitespace.
+LICENSE -whitespace

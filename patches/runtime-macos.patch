@@ -1,0 +1,223 @@
+diff --git a/.cargo/config.toml b/.cargo/config.toml
+index a75d72fc..e028f517 100644
+--- a/.cargo/config.toml
++++ b/.cargo/config.toml
+@@ -1,4 +1,7 @@
++# The bundled SDL2 and OpenAL releases predate CMake 4's policy cutoff.
++[env]
++CMAKE_POLICY_VERSION_MINIMUM = "3.5"
++
+ [build]
+-# the documentation for the touchHLE crate is intended to include private items
+-# alas this isn't scoped to that crate!
++# Keep upstream's documentation setting.
+ rustdocflags = ["--document-private-items"]
+diff --git a/OPTIONS_HELP.txt b/OPTIONS_HELP.txt
+index b7620ae2..6565fb83 100644
+--- a/OPTIONS_HELP.txt
++++ b/OPTIONS_HELP.txt
+@@ -155,7 +155,8 @@ View options:
+ 
+     --goat-pad
+         (Private fork, Goat Up.) Controller support that follows what's on
+-        screen, alongside --left-stick-tilt (the game's control type C): A
++        screen, alongside --left-stick-tilt (the game's control type C): the
++        left stick or D-pad moves left/right; A
+         jumps in play (held for a long jump) and on the menu presses TOUCH TO
+         START; X changes the control type and Y presses MORE INFO; B (or Esc)
+         quits from the menu, presses MAIN MENU on the info pages and QUIT when
+diff --git a/src/cpu/dynarmic_wrapper/build.rs b/src/cpu/dynarmic_wrapper/build.rs
+index 93a19cd3..915afe03 100644
+--- a/src/cpu/dynarmic_wrapper/build.rs
++++ b/src/cpu/dynarmic_wrapper/build.rs
+@@ -30,6 +30,15 @@ fn build_type_windows() -> &'static str {
+ }
+ 
+ fn main() {
++    println!("cargo:rerun-if-env-changed=MPR_AOT_DIR");
++    if let Some(path) = env::var_os("MPR_AOT_DIR") {
++        println!("cargo:rustc-link-search=native={}", Path::new(&path).display());
++        println!("cargo:rustc-link-lib=static=mpr_aot");
++        println!("cargo:rustc-link-lib=c++");
++        println!("cargo:rerun-if-changed={}", Path::new(&path).join("libmpr_aot.a").display());
++        return;
++    }
++
+     let package_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+     let workspace_root = package_root.join("../../..");
+     let dynarmic_root = workspace_root.join("vendor/dynarmic");
+@@ -128,8 +137,9 @@ fn main() {
+     cc::Build::new()
+         .file(package_root.join("lib.cpp"))
+         .cpp(true)
+-        .std("c++17")
++        .std("c++20")
+         .include(dynarmic_out.join("include"))
++        .include("/opt/homebrew/include")
+         .compile("dynarmic_wrapper");
+     rerun_if_changed(&package_root.join("lib.cpp"));
+ }
+diff --git a/src/cpu/dynarmic_wrapper/lib.cpp b/src/cpu/dynarmic_wrapper/lib.cpp
+index 022d87c9..c45c1db9 100644
+--- a/src/cpu/dynarmic_wrapper/lib.cpp
++++ b/src/cpu/dynarmic_wrapper/lib.cpp
+@@ -5,6 +5,9 @@
+  */
+ #include <cstdint>
+ #include <cstdio>
++#include <cstdlib>
++#include <unordered_set>
++#include "dynarmic/frontend/A32/a32_ir_emitter.h"
+ 
+ #include "dynarmic/interface/A32/a32.h"
+ #include "dynarmic/interface/A32/config.h"
+@@ -110,6 +113,23 @@ private:
+     }
+   }
+ 
++  void PreCodeTranslationHook(bool is_thumb, VAddr pc, Dynarmic::A32::IREmitter &ir) override {
++    static FILE *trace = []() -> FILE * {
++      const char *path = std::getenv("MPR_TRACE_FILE");
++      return path ? std::fopen(path, "wb") : nullptr;
++    }();
++    static std::unordered_set<std::uint64_t> seen;
++    if (!trace) return;
++    const auto location = ir.current_location.UniqueHash();
++    if (!seen.insert(location).second) return;
++    auto first = MemoryReadCode(pc & ~3u).value_or(0);
++    auto second = MemoryReadCode((pc & ~3u) + 4).value_or(0);
++    std::fwrite(&location, sizeof(location), 1, trace);
++    std::fwrite(&first, sizeof(first), 1, trace);
++    std::fwrite(&second, sizeof(second), 1, trace);
++    std::fflush(trace);
++  }
++
+   bool MemoryWriteExclusive8(VAddr, std::uint8_t, std::uint8_t) override {
+     std::fprintf(stderr, "MemoryWriteExclusive8: TODO");
+     abort();
+diff --git a/src/environment.rs b/src/environment.rs
+index 320a3573..0e0c48ee 100644
+--- a/src/environment.rs
++++ b/src/environment.rs
+@@ -403,17 +403,7 @@ impl Environment {
+             };
+ 
+             Some(Box::new(window::Window::new(
+-                &format!(
+-                    "{} (touchHLE {}{}{})",
+-                    bundle.display_name(),
+-                    super::branding(),
+-                    if super::branding().is_empty() {
+-                        ""
+-                    } else {
+-                        " "
+-                    },
+-                    super::VERSION
+-                ),
++                &bundle.display_name(),
+                 icon.ok(),
+                 launch_image,
+                 &options,
+diff --git a/src/paths.rs b/src/paths.rs
+index 8425a9c0..4fed5b38 100644
+--- a/src/paths.rs
++++ b/src/paths.rs
+@@ -43,6 +43,10 @@ fn get_macos_bundled_resources_path() -> Option<PathBuf> {
+     if std::env::consts::OS != "macos" {
+         return None;
+     }
++    // The local Mac launcher keeps emulator resources together in its bundle.
++    if let Some(path) = std::env::var_os("MPR_RESOURCE_DIR") {
++        return Some(PathBuf::from(path));
++    }
+     let base_path = PathBuf::from(sdl2::filesystem::base_path().ok()?);
+     if base_path.file_name().is_some_and(|p| p == "Resources") {
+         Some(base_path)
+@@ -140,6 +144,10 @@ pub fn sandbox_dir() -> &'static str {
+ /// Get a platform-specific base path needed for accessing touchHLE's
+ /// user-modifiable files. This is empty on platforms other than Android.
+ pub fn user_data_base_path() -> Cow<'static, Path> {
++    #[cfg(target_os = "macos")]
++    if let Some(path) = std::env::var_os("MPR_DATA_DIR") {
++        return Cow::from(PathBuf::from(path));
++    }
+     #[cfg(target_os = "android")]
+     unsafe {
+         // This is an exception to the rule that SDL2 should only be used
+diff --git a/src/window.rs b/src/window.rs
+index 0898cb5..d004ffe 100644
+--- a/src/window.rs
++++ b/src/window.rs
+@@ -867,10 +867,7 @@ impl Window {
+                     &event
+                 {
+                     let down = matches!(event, E::ControllerButtonDown { .. });
+-                    if *button == sdl2::controller::Button::A
+-                        && (self.pad_cursor_enabled || self.pad_cursor_pressed)
+-                    {
+-                        self.pad_cursor_press(down);
++                    if self.handle_pad_cursor_button(*button, down) {
+                         continue;
+                     }
+                     self.event_queue.push_back(Event::PadInput(PadInput::Button(*button), down));
+@@ -1479,10 +1476,24 @@ impl Window {
+     /// right-drag's) left/right, up to `degrees` each way. Turning it
+     /// clockwise moves gravity towards the screen's right (+x).
+     fn steering_wheel_acceleration(&self, options: &Options, degrees: f32) -> (f32, f32, f32) {
+-        let x = match self.virtual_accelerometer_last {
++        let mut x = match self.virtual_accelerometer_last {
+             Some((x, _, true)) => x,
+             _ => self.get_controller_stick(options, options.tilt_on_left_stick).0,
+         };
++        // GoatUp's gamepad mode uses control type C. Digital left/right should
++        // steer through the same tilt path as the left stick, while A remains
++        // an independent held jump touch.
++        if options.goat_pad && options.tilt_on_left_stick {
++            use sdl2::controller::Button;
++            let left=self.controllers.iter().any(|c| c.button(Button::DPadLeft));
++            let right=self.controllers.iter().any(|c| c.button(Button::DPadRight));
++            x=match (left,right) {
++                (true,false) => -1.0,
++                (false,true) => 1.0,
++                (true,true) => 0.0,
++                (false,false) => x,
++            };
++        }
+         let angle = (x.clamp(-1.0, 1.0) * degrees).to_radians();
+         (angle.sin(), -angle.cos(), 0.0)
+     }
+@@ -2098,10 +2109,7 @@ impl Window {
+         match *event {
+             E::ControllerButtonUp { button, .. } | E::ControllerButtonDown { button, .. } => {
+                 let down = matches!(event, E::ControllerButtonDown { .. });
+-                if button == sdl2::controller::Button::A
+-                    && (self.pad_cursor_enabled || self.pad_cursor_pressed)
+-                {
+-                    self.pad_cursor_press(down);
++                if self.handle_pad_cursor_button(button, down) {
+                     return Some(None);
+                 }
+                 Some(Some(Event::PadInput(PadInput::Button(button), down)))
+@@ -2175,6 +2183,22 @@ impl Window {
+         self.pad_cursor_enabled = on;
+     }
+ 
++    fn handle_pad_cursor_button(&mut self, button: sdl2::controller::Button, down: bool) -> bool {
++        // A press can open a menu while A is still held. Route the release
++        // to the cursor only if it received the press.
++        let use_cursor = if down {
++            self.pad_cursor_enabled
++        } else {
++            self.pad_cursor_pressed
++        };
++        if button == sdl2::controller::Button::A && use_cursor {
++            self.pad_cursor_press(down);
++            true
++        } else {
++            false
++        }
++    }
++
+     fn pad_cursor_press(&mut self, down: bool) {
+         if down == self.pad_cursor_pressed {
+             return;

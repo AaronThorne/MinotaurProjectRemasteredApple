@@ -1,0 +1,64 @@
+name: MinotaurApple
+options:
+  bundleIdPrefix: org.example
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  MinotaurApple:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Resources/Assets.xcassets
+      - path: Resources/Runtime
+        type: folder
+        buildPhase: resources
+      - path: Resources/GameData
+        type: folder
+        buildPhase: resources
+      - path: Resources/Icons
+        type: folder
+        buildPhase: resources
+      - path: Resources/CompiledGames.plist
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.example.minotaur.apple
+        PRODUCT_NAME: MinotaurApple
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/runtime/vendor/SDL/include"
+        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/runtime/target/aarch64-apple-ios/release"
+        OTHER_LDFLAGS: "-ObjC -lc++ -lz -liconv"
+        ENABLE_BITCODE: NO
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Minotaur Project
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
+        INFOPLIST_KEY_UIStatusBarHidden: YES
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: Connect a game controller to play the games.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        CLANG_ENABLE_OBJC_ARC: YES
+    dependencies:
+      - framework: runtime/target/aarch64-apple-ios/release/libtouchHLE.a
+        embed: false
+      - sdk: UIKit.framework
+      - sdk: Foundation.framework
+      - sdk: AVFoundation.framework
+      - sdk: AudioToolbox.framework
+      - sdk: CoreAudio.framework
+      - sdk: CoreGraphics.framework
+      - sdk: CoreMotion.framework
+      - sdk: CoreBluetooth.framework
+      - sdk: GameController.framework
+      - sdk: CoreHaptics.framework
+      - sdk: OpenGLES.framework
+      - sdk: OpenAL.framework
+      - sdk: QuartzCore.framework
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: CoreImage.framework
+      - sdk: CoreText.framework

@@ -1,0 +1,10 @@
+# Controller options from MinotaurProjectRemastered-touchHLE.
+uk.co.llamasoft.gridrunner: --disable-analog-stick-tilt-controls --stick-to-icade --icade-analog=0.1,1.35 --swipe-origin=384,620 --button-to-touch=A,384,800 --button-to-touch=Y,384,432 --button-to-touch=X,384,432 --button-to-touch=DPadLeft,58,432 --button-to-touch=DPadRight,710,432 --button-to-touch=Start,384,307 --button-to-rotate=RightShoulder --rotate-three-ways --exit-button=Back --landscape-button-to-touch=Start,512,285 --deadzone=0.18
+uk.co.llamasoft.tp: --stick-to-icade --deadzone=0.18 --button-to-touch=A,384,512 --button-to-touch=Start,384,150 --exit-button=Back
+uk.co.llamasoft.deflex: --deflex-pad --disable-analog-stick-tilt-controls
+uk.co.llamasoft.sf: --stick-to-icade --icade-analog=0.15,1 --deadzone=0.18 --button-to-touch=A,384,748 --button-to-touch=Start,384,135 --exit-button=Back
+uk.co.llamasoft.minos: --stick-to-icade --deadzone=0.18 --minos-pad --right-stick-tilt
+uk.co.llamasoft.Goat: --goat-pad --left-stick-tilt=20 --deadzone=0.12
+co.uk.llamasoft.Grunt: --goat2-pad --left-stick-tilt=20 --deadzone=0.12
+uk.co.llamasoft.minorescue: --rescue-pad --disable-analog-stick-tilt-controls
+uk.co.llamasoft.minotron: --minotron-pad --disable-analog-stick-tilt-controls

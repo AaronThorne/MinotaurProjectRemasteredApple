@@ -1,0 +1,729 @@
+diff --git a/.cargo/config.toml b/.cargo/config.toml
+index a75d72fc..e028f517 100644
+--- a/.cargo/config.toml
++++ b/.cargo/config.toml
+@@ -1,4 +1,7 @@
++# The bundled SDL2 and OpenAL releases predate CMake 4's policy cutoff.
++[env]
++CMAKE_POLICY_VERSION_MINIMUM = "3.5"
++
+ [build]
+-# the documentation for the touchHLE crate is intended to include private items
+-# alas this isn't scoped to that crate!
++# Keep upstream's documentation setting.
+ rustdocflags = ["--document-private-items"]
+diff --git a/Cargo.lock b/Cargo.lock
+index 8980d703..65a648c0 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -677,7 +677,6 @@ dependencies = [
+ [[package]]
+ name = "sdl2-sys"
+ version = "0.37.0"
+-source = "git+https://github.com/touchHLE/rust-sdl2?tag=touchHLE-3#b67f98fe6a147773b6f05d50ae775d9fe16561e7"
+ dependencies = [
+  "cfg-if",
+  "cmake",
+diff --git a/Cargo.toml b/Cargo.toml
+index 2edd9ee9..e11db7e8 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -20,7 +20,7 @@ homepage = { workspace = true }
+ 
+ [lib]
+ # https://users.rust-lang.org/t/making-both-binary-and-cdylib-from-one-package/29105
+-crate-type = ["cdylib", "rlib"]
++crate-type = ["staticlib", "rlib"]
+ 
+ [[bin]]
+ name = "touchHLE"
+@@ -101,3 +101,6 @@ lto = "fat"
+ codegen-units = 1
+ opt-level = "s"
+ strip = true
++
++[patch."https://github.com/touchHLE/rust-sdl2"]
++sdl2-sys = { path = "../vendor/sdl2-sys" }
+diff --git a/src/audio/openal.rs b/src/audio/openal.rs
+index e7539d44..ac871f39 100644
+--- a/src/audio/openal.rs
++++ b/src/audio/openal.rs
+@@ -13,7 +13,26 @@ pub use al_sys::al_defines::*;
+ pub use al_sys::al_types;
+ pub use al_sys::alc_defines::*;
+ pub use al_sys::alc_types;
+-pub use al_sys::{alcCloseDevice, alcGetError, alcGetString, alcOpenDevice};
++pub use al_sys::{alcGetError, alcGetString};
++#[cfg(not(target_os = "ios"))]
++pub use al_sys::{alcCloseDevice, alcOpenDevice};
++#[cfg(target_os = "ios")]
++static IOS_DEVICE: std::sync::Mutex<(usize,usize)> = std::sync::Mutex::new((0,0));
++#[cfg(target_os = "ios")]
++pub unsafe fn alcOpenDevice(name:*const alc_types::ALCchar) -> *mut ALCdevice {
++    let mut shared=IOS_DEVICE.lock().unwrap();
++    if shared.0==0 { shared.0=al_sys::alcOpenDevice(name) as usize; }
++    if shared.0!=0 { shared.1+=1; }
++    shared.0 as *mut ALCdevice
++}
++#[cfg(target_os = "ios")]
++pub unsafe fn alcCloseDevice(device:*mut ALCdevice) -> alc_types::ALCboolean {
++    let mut shared=IOS_DEVICE.lock().unwrap();
++    if shared.0!=device as usize || shared.1==0 { return ALC_FALSE; }
++    shared.1-=1;
++    if shared.1==0 { let result=al_sys::alcCloseDevice(device);shared.0=0;return result; }
++    ALC_TRUE
++}
+ 
+ use al_types::*;
+ 
+@@ -38,6 +57,7 @@ impl Drop for OpenALManager {
+ #[derive(Debug)]
+ pub struct OpenALContext {
+     context: *mut ALCcontext,
++    owns_device: bool,
+     // We don't need to guarantee the lifetime or thread-safety of the device -
+     // OpenAL (should) do that for us.
+     device: *mut ALCdevice,
+@@ -45,11 +65,15 @@ pub struct OpenALContext {
+ 
+ impl OpenALContext {
+     pub fn new(_manager: &mut OpenALManager) -> Result<Self, String> {
+-        let device = unsafe { al_sys::alcOpenDevice(std::ptr::null()) };
++        let device = unsafe { alcOpenDevice(std::ptr::null()) };
+         if device.is_null() {
+             return Err("Could not open OpenAL device".to_string());
+         }
+-        unsafe { Self::new_with_device_and_attrlist(_manager, device, std::ptr::null()) }
++        let result = unsafe { Self::new_with_device_and_attrlist(_manager, device, std::ptr::null()) };
++        match result {
++            Ok(mut context) => { context.owns_device=true;Ok(context) },
++            Err(error) => { unsafe { alcCloseDevice(device); } Err(error) }
++        }
+     }
+ 
+     pub unsafe fn new_with_device_and_attrlist(
+@@ -66,7 +90,7 @@ impl OpenALContext {
+             device,
+             context
+         );
+-        Ok(Self { context, device })
++        Ok(Self { context, device, owns_device:false })
+     }
+ 
+     pub fn make_current<'al_ctx, 'manager: 'al_ctx>(
+@@ -103,7 +127,11 @@ impl OpenALContext {
+ 
+ impl Drop for OpenALContext {
+     fn drop(&mut self) {
+-        unsafe { al_sys::alcDestroyContext(self.context) };
++        unsafe {
++            if al_sys::alcGetCurrentContext()==self.context { al_sys::alcMakeContextCurrent(std::ptr::null_mut()); }
++            al_sys::alcDestroyContext(self.context);
++            if self.owns_device { alcCloseDevice(self.device); }
++        };
+     }
+ }
+ 
+diff --git a/src/audio/openal_soft_wrapper/build.rs b/src/audio/openal_soft_wrapper/build.rs
+index d0a2e502..39808314 100644
+--- a/src/audio/openal_soft_wrapper/build.rs
++++ b/src/audio/openal_soft_wrapper/build.rs
+@@ -26,6 +26,10 @@ fn link_framework(framework: &str) {
+ 
+ fn main() {
+     let os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS was not set");
++    if os == "ios" {
++        link_framework("OpenAL");
++        return;
++    }
+     if cfg!(feature = "static") {
+         let package_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+         let workspace_root = package_root.join("../../..");
+diff --git a/src/cpu/dynarmic_wrapper/build.rs b/src/cpu/dynarmic_wrapper/build.rs
+index 93a19cd3..915afe03 100644
+--- a/src/cpu/dynarmic_wrapper/build.rs
++++ b/src/cpu/dynarmic_wrapper/build.rs
+@@ -30,6 +30,15 @@ fn build_type_windows() -> &'static str {
+ }
+ 
+ fn main() {
++    println!("cargo:rerun-if-env-changed=MPR_AOT_DIR");
++    if let Some(path) = env::var_os("MPR_AOT_DIR") {
++        println!("cargo:rustc-link-search=native={}", Path::new(&path).display());
++        println!("cargo:rustc-link-lib=static=mpr_aot");
++        println!("cargo:rustc-link-lib=c++");
++        println!("cargo:rerun-if-changed={}", Path::new(&path).join("libmpr_aot.a").display());
++        return;
++    }
++
+     let package_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+     let workspace_root = package_root.join("../../..");
+     let dynarmic_root = workspace_root.join("vendor/dynarmic");
+@@ -128,8 +137,9 @@ fn main() {
+     cc::Build::new()
+         .file(package_root.join("lib.cpp"))
+         .cpp(true)
+-        .std("c++17")
++        .std("c++20")
+         .include(dynarmic_out.join("include"))
++        .include("/opt/homebrew/include")
+         .compile("dynarmic_wrapper");
+     rerun_if_changed(&package_root.join("lib.cpp"));
+ }
+diff --git a/src/cpu/dynarmic_wrapper/lib.cpp b/src/cpu/dynarmic_wrapper/lib.cpp
+index 022d87c9..c45c1db9 100644
+--- a/src/cpu/dynarmic_wrapper/lib.cpp
++++ b/src/cpu/dynarmic_wrapper/lib.cpp
+@@ -5,6 +5,9 @@
+  */
+ #include <cstdint>
+ #include <cstdio>
++#include <cstdlib>
++#include <unordered_set>
++#include "dynarmic/frontend/A32/a32_ir_emitter.h"
+ 
+ #include "dynarmic/interface/A32/a32.h"
+ #include "dynarmic/interface/A32/config.h"
+@@ -110,6 +113,23 @@ private:
+     }
+   }
+ 
++  void PreCodeTranslationHook(bool is_thumb, VAddr pc, Dynarmic::A32::IREmitter &ir) override {
++    static FILE *trace = []() -> FILE * {
++      const char *path = std::getenv("MPR_TRACE_FILE");
++      return path ? std::fopen(path, "wb") : nullptr;
++    }();
++    static std::unordered_set<std::uint64_t> seen;
++    if (!trace) return;
++    const auto location = ir.current_location.UniqueHash();
++    if (!seen.insert(location).second) return;
++    auto first = MemoryReadCode(pc & ~3u).value_or(0);
++    auto second = MemoryReadCode((pc & ~3u) + 4).value_or(0);
++    std::fwrite(&location, sizeof(location), 1, trace);
++    std::fwrite(&first, sizeof(first), 1, trace);
++    std::fwrite(&second, sizeof(second), 1, trace);
++    std::fflush(trace);
++  }
++
+   bool MemoryWriteExclusive8(VAddr, std::uint8_t, std::uint8_t) override {
+     std::fprintf(stderr, "MemoryWriteExclusive8: TODO");
+     abort();
+diff --git a/src/environment.rs b/src/environment.rs
+index 320a3573..7652c134 100644
+--- a/src/environment.rs
++++ b/src/environment.rs
+@@ -403,17 +403,7 @@ impl Environment {
+             };
+ 
+             Some(Box::new(window::Window::new(
+-                &format!(
+-                    "{} (touchHLE {}{}{})",
+-                    bundle.display_name(),
+-                    super::branding(),
+-                    if super::branding().is_empty() {
+-                        ""
+-                    } else {
+-                        " "
+-                    },
+-                    super::VERSION
+-                ),
++                &bundle.display_name(),
+                 icon.ok(),
+                 launch_image,
+                 &options,
+@@ -1383,6 +1373,11 @@ impl Environment {
+                         window.on_main_stack = true;
+                     };
+ 
++                    #[cfg(target_os = "ios")]
++                    if e.is::<crate::GameExit>() {
++                        drop(env);
++                        return;
++                    }
+                     echo!("Register state immediately after panic:");
+                     env.dump_all_regs();
+                     env.stack_trace_all();
+@@ -1480,6 +1475,11 @@ impl Environment {
+                         };
+                         window::show_error_messagebox(self.window.as_deref(), error_string);
+                     }
++                    #[cfg(target_os = "ios")]
++                    if e.is::<crate::GameExit>() {
++                        drop(self);
++                        return;
++                    }
+                     echo!("Register state immediately after panic:");
+                     self.dump_all_regs();
+                     self.stack_trace_all();
+diff --git a/src/frameworks/audio_toolbox/audio_unit.rs b/src/frameworks/audio_toolbox/audio_unit.rs
+index e7d7234b..a5160632 100644
+--- a/src/frameworks/audio_toolbox/audio_unit.rs
++++ b/src/frameworks/audio_toolbox/audio_unit.rs
+@@ -210,7 +210,9 @@ fn AudioOutputUnitStart(env: &mut Environment, ci: AudioUnit) -> OSStatus {
+         context.GenSources(1, &mut source);
+         // Private fork: --audio-resampler (AL_SOURCE_RESAMPLER_SOFT).
+         if let Some(resampler) = resampler {
+-            context.Sourcei(source, 0x1212, resampler);
++            if context.IsExtensionPresent(b"AL_SOFT_source_resampler\0".as_ptr().cast()) != 0 {
++                context.Sourcei(source, 0x1212, resampler);
++            }
+         }
+         // Private fork: --volume (AL_GAIN).
+         if let Some(volume) = volume {
+diff --git a/src/frameworks/openal.rs b/src/frameworks/openal.rs
+index 33e5bc48..464e30e9 100644
+--- a/src/frameworks/openal.rs
++++ b/src/frameworks/openal.rs
+@@ -47,6 +47,13 @@ pub struct State {
+     warned_mixer_output_rate_proc: bool,
+     warned_invalid_host_devices: HashSet<*mut ALCdevice>,
+ }
++#[cfg(target_os = "ios")]
++impl Drop for State {
++    fn drop(&mut self) {
++        self.contexts.clear();
++        for (_,device) in self.devices.drain() { unsafe { al::alcCloseDevice(device); } }
++    }
++}
+ impl State {
+     fn get(env: &mut Environment) -> &mut Self {
+         &mut env.framework_state.openal
+diff --git a/src/frameworks/opengles/eagl.rs b/src/frameworks/opengles/eagl.rs
+index 5454381..4d5e988 100644
+--- a/src/frameworks/opengles/eagl.rs
++++ b/src/frameworks/opengles/eagl.rs
+@@ -596,6 +596,8 @@ unsafe fn read_renderbuffer(gles: &mut dyn GLES, mut pixel_buffer: Vec<u8>) -> (
+ 
+     // Clean up the framebuffer object since we no longer need it.
+     gles.DeleteFramebuffersOES(1, &src_framebuffer);
++    #[cfg(target_os = "ios")]
++    gles.BindFramebufferOES(gles11::FRAMEBUFFER_OES,0);
+ 
+     // Restore the framebuffer binding
+     gles.BindFramebufferOES(gles11::FRAMEBUFFER_OES, old_framebuffer);
+@@ -755,6 +757,14 @@ unsafe fn present_renderbuffer(env: &mut Environment, crop: [f32; 4]) {
+         (crop_h * height as f32).round() as GLsizei,
+     );
+ 
++    #[cfg(target_os = "ios")]
++    if gles.is_es2() {
++        extern "C" { fn mpr_present_es2(renderbuffer:u32,x:i32,y:i32,width:i32,height:i32,vx:i32,vy:i32,vw:i32,vh:i32,rotation:*const f32,nearest:i32,cursor:*const f32); }
++        let cursor = virtual_cursor_visible_at.map(|(x, y, pressed)| [x, y, pressed as u8 as f32]);
++        mpr_present_es2(renderbuffer,src_x,src_y,src_w,src_h,viewport.0 as i32,viewport.1 as i32,viewport.2 as i32,viewport.3 as i32,rotation_matrix.columns().as_ptr().cast(),env.options.nearest_present as i32,cursor.as_ref().map_or(std::ptr::null(), |point| point.as_ptr()));
++        return;
++    }
++
+     // The presentation code below uses the fixed-function pipeline, so an
+     // OpenGL ES 2.0 app's program, texture unit and generic vertex arrays
+     // must be set aside first (generic attribute 0 aliases the vertex array).
+@@ -809,6 +819,8 @@ unsafe fn present_renderbuffer(env: &mut Environment, crop: [f32; 4]) {
+     // This also sets the framebuffer bindings back to zero, so rendering
+     // will go to the default framebuffer (the window).
+     gles.DeleteFramebuffersOES(1, &src_framebuffer);
++    #[cfg(target_os = "ios")]
++    gles.BindFramebufferOES(gles11::FRAMEBUFFER_OES,0);
+ 
+     // Reset various things that could affect the quad or virtual cursor we're
+     // going to draw. Back up the old state while doing so, so it can be
+diff --git a/src/frameworks/opengles/gles_guest.rs b/src/frameworks/opengles/gles_guest.rs
+index 834d8d51..8e654867 100644
+--- a/src/frameworks/opengles/gles_guest.rs
++++ b/src/frameworks/opengles/gles_guest.rs
+@@ -1613,6 +1613,8 @@ fn glUnmapBufferOES(env: &mut Environment, target: GLenum) -> GLboolean {
+ /// It prevents divisions by zero in levels where fog is used and both
+ /// values are set to 10000.
+ unsafe fn clamp_fog_state_values(gles: &mut dyn GLES) -> Option<(f32, f32)> {
++    // ES2 has programmable shaders and no fixed-function fog state.
++    if gles.is_es2() { return None; }
+     let mut fogEnabled: GLboolean = 0;
+     gles.GetBooleanv(gles11::FOG, &mut fogEnabled);
+     if fogEnabled != 0 {
+diff --git a/src/frameworks/uikit/ui_application.rs b/src/frameworks/uikit/ui_application.rs
+index 9a23d4f7..4c2448ab 100644
+--- a/src/frameworks/uikit/ui_application.rs
++++ b/src/frameworks/uikit/ui_application.rs
+@@ -488,6 +488,9 @@ pub(crate) fn exit(env: &mut Environment) {
+         let _: () = msg![env; pool drain];
+     };
+ 
++    #[cfg(target_os = "ios")]
++    std::panic::panic_any(crate::GameExit);
++    #[cfg(not(target_os = "ios"))]
+     std::process::exit(0);
+ }
+ 
+diff --git a/src/gles/gles1_native.rs b/src/gles/gles1_native.rs
+index 8b0fd9dd..49021222 100644
+--- a/src/gles/gles1_native.rs
++++ b/src/gles/gles1_native.rs
+@@ -765,7 +765,11 @@ impl GLES for GLES1Native<'_> {
+         gles11::IsRenderbufferOES(renderbuffer)
+     }
+     unsafe fn BindFramebufferOES(&mut self, target: GLenum, framebuffer: GLuint) {
+-        gles11::BindFramebufferOES(target, framebuffer)
++        {
++            #[cfg(target_os = "ios")]
++            let framebuffer = if framebuffer == 0 { extern "C" { fn mpr_screen_framebuffer() -> u32; } mpr_screen_framebuffer() } else { framebuffer };
++            gles11::BindFramebufferOES(target, framebuffer)
++        }
+     }
+     unsafe fn BindRenderbufferOES(&mut self, target: GLenum, renderbuffer: GLuint) {
+         gles11::BindRenderbufferOES(target, renderbuffer)
+diff --git a/src/gles/gles1_on_gl2.rs b/src/gles/gles1_on_gl2.rs
+index e9bca881..3f2ba457 100644
+--- a/src/gles/gles1_on_gl2.rs
++++ b/src/gles/gles1_on_gl2.rs
+@@ -433,7 +433,7 @@ impl GLESContext for GLES1OnGL2Context {
+         unsafe {
+             window.make_gl_context_current(&self.gl_ctx);
+         }
+-        gl21::load_with(|s| window.gl_get_proc_address(s));
++        gl21::load_with(|s| load_native_gl(s, &mut |name| window.gl_get_proc_address(name)));
+         self.is_loaded = true;
+ 
+         Box::new(GLES1OnGL2 {
+@@ -453,7 +453,7 @@ impl GLESContext for GLES1OnGL2Context {
+         }
+ 
+         make_current_fn(&self.gl_ctx);
+-        gl21::load_with(loader_fn);
++        gl21::load_with(|s| load_native_gl(s, loader_fn));
+         self.is_loaded = true;
+ 
+         Box::new(GLES1OnGL2 {
+@@ -1042,7 +1042,8 @@ impl GLES for GLES1OnGL2<'_> {
+         gl21::FrontFace(mode);
+     }
+     unsafe fn DepthRangef(&mut self, near: GLclampf, far: GLclampf) {
+-        gl21::DepthRange(near.into(), far.into())
++        { #[cfg(target_os = "ios")] { native_ios::glDepthRangef(near, far); }
++        #[cfg(not(target_os = "ios"))] { gl21::DepthRange(near.into(), far.into()); } }
+     }
+     unsafe fn DepthRangex(&mut self, near: GLclampx, far: GLclampx) {
+         gl21::DepthRange(fixed_to_float(near).into(), fixed_to_float(far).into())
+@@ -1551,7 +1552,8 @@ impl GLES for GLES1OnGL2<'_> {
+         )
+     }
+     unsafe fn ClearDepthf(&mut self, depth: GLclampf) {
+-        gl21::ClearDepth(depth.into())
++        { #[cfg(target_os = "ios")] { native_ios::glClearDepthf(depth); }
++        #[cfg(not(target_os = "ios"))] { gl21::ClearDepth(depth.into()); } }
+     }
+     unsafe fn ClearDepthx(&mut self, depth: GLclampx) {
+         self.ClearDepthf(fixed_to_float(depth))
+@@ -2165,7 +2167,7 @@ impl GLES for GLES1OnGL2<'_> {
+         gl21::IsRenderbufferEXT(renderbuffer)
+     }
+     unsafe fn BindFramebufferOES(&mut self, target: GLenum, framebuffer: GLuint) {
+-        gl21::BindFramebufferEXT(target, framebuffer)
++        gl21::BindFramebufferEXT(target, screen_framebuffer(framebuffer))
+     }
+     unsafe fn BindRenderbufferOES(&mut self, target: GLenum, renderbuffer: GLuint) {
+         gl21::BindRenderbufferEXT(target, renderbuffer)
+@@ -2254,7 +2256,7 @@ impl GLES for GLES1OnGL2<'_> {
+         gl21::IsShader(shader)
+     }
+     unsafe fn ShaderSource(&mut self, shader: GLuint, source: &str) {
+-        let translated = translate_glsl_es_to_glsl120(source);
++        let translated = if cfg!(target_os = "ios") { source.to_owned() } else { translate_glsl_es_to_glsl120(source) };
+         log_dbg!("Translated shader {}:\n{}", shader, translated);
+         let ptr = translated.as_ptr() as *const GLchar;
+         let len = translated.len() as GLint;
+@@ -2478,3 +2480,17 @@ impl GLES for GLES1OnGL2<'_> {
+         gl21::StencilMaskSeparate(face, mask)
+     }
+ }
++
++fn load_native_gl(name: &'static str, loader: &mut dyn FnMut(&'static str) -> *const std::ffi::c_void) -> *const std::ffi::c_void {
++    let pointer = loader(name);
++    if !pointer.is_null() || !cfg!(target_os = "ios") { return pointer; }
++    if let Some(core) = name.strip_suffix("EXT") { return loader(core); }
++    match name { "glMapBuffer" => loader("glMapBufferOES"), "glUnmapBuffer" => loader("glUnmapBufferOES"), _ => pointer }
++}
++#[cfg(target_os = "ios")]
++mod native_ios { extern "C" { pub fn glDepthRangef(near:f32, far:f32); pub fn glClearDepthf(depth:f32); } }
++fn screen_framebuffer(framebuffer:u32) -> u32 {
++    #[cfg(target_os = "ios")]
++    if framebuffer == 0 { unsafe { extern "C" { fn mpr_screen_framebuffer() -> u32; } return mpr_screen_framebuffer(); } }
++    framebuffer
++}
+diff --git a/src/lib.rs b/src/lib.rs
+index e650b0c..47f1cc7 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -131,6 +131,8 @@ Special options:
+ fn log_panics() {
+     let default_hook = std::panic::take_hook();
+     std::panic::set_hook(Box::new(move |info| {
++        #[cfg(target_os = "ios")]
++        if info.payload().is::<GameExit>() { return; }
+         log!("{}", info);
+         default_hook(info);
+     }));
+@@ -393,6 +395,18 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
+             apply_options(built_in, "the built-in options", &mut options, app_id)?;
+         }
+     }
++    #[cfg(target_os = "ios")]
++    {
++        extern "C" {
++            fn mpr_mobile_gamepad_profile() -> i32;
++        }
++        if unsafe { mpr_mobile_gamepad_profile() } != 0 {
++            let path = "touchHLE_gamepad_options.txt";
++            let mut file = paths::ResourceFile::open(path)
++                .map_err(|err| format!("Could not open controller profiles: {err}"))?;
++            apply_options(file.get(), path, &mut options, app_id)?;
++        }
++    }
+     echo!();
+ 
+     // Apply command-line options
+@@ -435,3 +449,19 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
+     env.run();
+     Ok(())
+ }
++
++#[cfg(target_os = "ios")]
++#[no_mangle]
++pub unsafe extern "C" fn mpr_run_game(path: *const std::ffi::c_char) -> i32 {
++    // Keep the original iPad game canvas; the host viewport scales it to fit.
++    let path = std::ffi::CStr::from_ptr(path).to_string_lossy().into_owned();
++    let family="--device-family=ipad";
++    match main([String::from("Minotaur"), path, String::from("--gles1=gles1_native"),String::from(family)].into_iter()) {
++        Ok(_) => 0,
++        Err(error) => { echo!("Game error: {}", error); 1 }
++    }
++}
++
++#[cfg(target_os = "ios")]
++#[derive(Debug)]
++pub(crate) struct GameExit;
+diff --git a/src/paths.rs b/src/paths.rs
+index 8425a9c0..28d9786f 100644
+--- a/src/paths.rs
++++ b/src/paths.rs
+@@ -40,9 +40,13 @@ pub const DEFAULT_OPTIONS_FILE: &str = "touchHLE_default_options.txt";
+ /// [None].
+ #[allow(dead_code)]
+ fn get_macos_bundled_resources_path() -> Option<PathBuf> {
+-    if std::env::consts::OS != "macos" {
++    if !matches!(std::env::consts::OS, "macos" | "ios") {
+         return None;
+     }
++    // The local Mac launcher keeps emulator resources together in its bundle.
++    if let Some(path) = std::env::var_os("MPR_RESOURCE_DIR") {
++        return Some(PathBuf::from(path));
++    }
+     let base_path = PathBuf::from(sdl2::filesystem::base_path().ok()?);
+     if base_path.file_name().is_some_and(|p| p == "Resources") {
+         Some(base_path)
+@@ -140,6 +144,10 @@ pub fn sandbox_dir() -> &'static str {
+ /// Get a platform-specific base path needed for accessing touchHLE's
+ /// user-modifiable files. This is empty on platforms other than Android.
+ pub fn user_data_base_path() -> Cow<'static, Path> {
++    #[cfg(any(target_os = "macos", target_os = "ios"))]
++    if let Some(path) = std::env::var_os("MPR_DATA_DIR") {
++        return Cow::from(PathBuf::from(path));
++    }
+     #[cfg(target_os = "android")]
+     unsafe {
+         // This is an exception to the rule that SDL2 should only be used
+@@ -235,7 +243,7 @@ pub fn url_for_opening_user_data_dir() -> Result<String, String> {
+ /// doesn't exist, and populate it with templates or README files. (On other
+ /// platforms these are simply bundled with touchHLE in a ZIP file.)
+ pub fn prepopulate_user_data_dir() {
+-    if std::env::consts::OS != "android" && std::env::consts::OS != "macos" {
++    if std::env::consts::OS != "android" && !matches!(std::env::consts::OS, "macos" | "ios") {
+         return;
+     }
+     let base_path = user_data_base_path();
+diff --git a/src/window.rs b/src/window.rs
+index 0898cb5..de98f8c 100644
+--- a/src/window.rs
++++ b/src/window.rs
+@@ -157,6 +157,12 @@ fn rotate_fullscreen_size(orientation: DeviceOrientation, screen_size: (u32, u32
+ }
+ /// Tell SDL2 what orientation we want. Only useful on Android.
+ fn set_sdl2_orientation(orientation: DeviceOrientation) {
++    if cfg!(target_os = "ios") {
++        // Guest rotation is handled by the compositor. Let the iPad's scene
++        // follow the physical device without requesting Android display modes.
++        sdl2::hint::set("SDL_IOS_ORIENTATIONS", "Portrait PortraitUpsideDown LandscapeLeft LandscapeRight");
++        return;
++    }
+     // Despite the name, this hint works on Android too.
+     sdl2::hint::set(
+         "SDL_IOS_ORIENTATIONS",
+@@ -413,7 +419,7 @@ impl Window {
+     /// display fullscreen, but SDL2 will let us control the orientation, i.e.
+     /// Android devices.
+     pub fn rotatable_fullscreen() -> bool {
+-        env::consts::OS == "android"
++        matches!(env::consts::OS, "android" | "ios")
+     }
+     pub fn new(
+         title: &str,
+@@ -441,7 +447,7 @@ impl Window {
+         // remove this (https://github.com/touchHLE/touchHLE/issues/85).
+         sdl2::hint::set("SDL_JOYSTICK_HIDAPI", "0");
+ 
+-        if env::consts::OS == "android" {
++        if matches!(env::consts::OS, "android" | "ios") {
+             // It's important to set context version BEFORE window creation
+             // ref. https://wiki.libsdl.org/SDL2/SDL_GLattr
+             let attr = video_ctx.gl_attr();
+@@ -472,13 +478,15 @@ impl Window {
+             // Without this, SDL will force fullscreen mode to be portrait.
+             set_sdl2_orientation(device_orientation);
+             let screen_size = video_ctx.display_bounds(0).unwrap().size();
+-            let (width, height) = rotate_fullscreen_size(device_orientation, screen_size);
+-            let window = video_ctx
++            let (width, height) = if cfg!(target_os = "ios") { screen_size } else { rotate_fullscreen_size(device_orientation, screen_size) };
++            let window = if cfg!(target_os = "ios") {
++                video_ctx.window(title,width,height).fullscreen_desktop().opengl().build().unwrap()
++            } else { video_ctx
+                 .window(title, width, height)
+                 .fullscreen()
+                 .opengl()
+                 .build()
+-                .unwrap();
++                .unwrap() };
+             window
+         } else if let Some((x, y, width, height)) = options.window_rect {
+             video_ctx
+@@ -514,7 +522,7 @@ impl Window {
+             window
+         };
+ 
+-        if env::consts::OS == "android" {
++        if matches!(env::consts::OS, "android" | "ios") {
+             // Sanity check
+             let gl_attr = video_ctx.gl_attr();
+             debug_assert_eq!(gl_attr.context_profile(), sdl2::video::GLProfile::GLES);
+@@ -867,10 +875,7 @@ impl Window {
+                     &event
+                 {
+                     let down = matches!(event, E::ControllerButtonDown { .. });
+-                    if *button == sdl2::controller::Button::A
+-                        && (self.pad_cursor_enabled || self.pad_cursor_pressed)
+-                    {
+-                        self.pad_cursor_press(down);
++                    if self.handle_pad_cursor_button(*button, down) {
+                         continue;
+                     }
+                     self.event_queue.push_back(Event::PadInput(PadInput::Button(*button), down));
+@@ -1356,7 +1361,7 @@ impl Window {
+             }
+             log!("Pad {} (slot {}) is this player's.", controller_name, index);
+         }
+-        if env::consts::OS == "android" && controller_name.starts_with("uinput-") {
++        if matches!(env::consts::OS, "android" | "ios") && controller_name.starts_with("uinput-") {
+             log!("ignoring fingerprint device: {}", controller_name);
+             return;
+         }
+@@ -1410,7 +1415,9 @@ impl Window {
+     /// See also [crate::frameworks::uikit::ui_accelerometer].
+     pub fn get_acceleration(&self, options: &Options) -> (f32, f32, f32) {
+         if let Some(degrees) = options.right_stick_tilt {
+-            return self.steering_wheel_acceleration(options, degrees);
++            if !cfg!(target_os = "ios") || !self.controllers.is_empty() {
++                return self.steering_wheel_acceleration(options, degrees);
++            }
+         }
+         if self.controllers.is_empty() || !options.analog_stick_tilt_controls {
+             if let Some(ref accelerometer) = self.accelerometer {
+@@ -1961,8 +1968,13 @@ impl Window {
+                 attr.set_context_profile(sdl2::video::GLProfile::GLES);
+             }
+             GLVersion::GL21Compat => {
+-                attr.set_context_version(2, 1);
+-                attr.set_context_profile(sdl2::video::GLProfile::Compatibility);
++                if cfg!(target_os = "ios") {
++                    attr.set_context_version(2, 0);
++                    attr.set_context_profile(sdl2::video::GLProfile::GLES);
++                } else {
++                    attr.set_context_version(2, 1);
++                    attr.set_context_profile(sdl2::video::GLProfile::Compatibility);
++                }
+             }
+         }
+ 
+@@ -2072,6 +2084,8 @@ impl Window {
+             gl_ctx.DeleteTextures(1, &texture);
+         };
+ 
++        #[cfg(target_os = "ios")]
++        unsafe { mpr_prepare_present(); }
+         self.window.gl_swap_window();
+ 
+         // hold onto GL context so the image doesn't disappear, and hold
+@@ -2081,6 +2095,8 @@ impl Window {
+     /// Swap front-buffer and back-buffer so the result of OpenGL rendering is
+     /// presented.
+     pub fn swap_window(&self) {
++        #[cfg(target_os = "ios")]
++        unsafe { mpr_prepare_present(); }
+         self.window.gl_swap_window();
+     }
+ 
+@@ -2098,10 +2114,7 @@ impl Window {
+         match *event {
+             E::ControllerButtonUp { button, .. } | E::ControllerButtonDown { button, .. } => {
+                 let down = matches!(event, E::ControllerButtonDown { .. });
+-                if button == sdl2::controller::Button::A
+-                    && (self.pad_cursor_enabled || self.pad_cursor_pressed)
+-                {
+-                    self.pad_cursor_press(down);
++                if self.handle_pad_cursor_button(button, down) {
+                     return Some(None);
+                 }
+                 Some(Some(Event::PadInput(PadInput::Button(button), down)))
+@@ -2175,6 +2188,22 @@ impl Window {
+         self.pad_cursor_enabled = on;
+     }
+ 
++    fn handle_pad_cursor_button(&mut self, button: sdl2::controller::Button, down: bool) -> bool {
++        // A press can open a menu while A is still held. Route the release
++        // to the cursor only if it received the press.
++        let use_cursor = if down {
++            self.pad_cursor_enabled
++        } else {
++            self.pad_cursor_pressed
++        };
++        if button == sdl2::controller::Button::A && use_cursor {
++            self.pad_cursor_press(down);
++            true
++        } else {
++            false
++        }
++    }
++
+     fn pad_cursor_press(&mut self, down: bool) {
+         if down == self.pad_cursor_pressed {
+             return;
+@@ -2277,7 +2306,7 @@ impl Window {
+             self.window.set_size(width, height).unwrap();
+         }
+ 
+-        if Self::rotatable_fullscreen() {
++        if Self::rotatable_fullscreen() && !cfg!(target_os = "ios") {
+             set_sdl2_orientation(new_orientation);
+             // Hack: from reading SDL2's source code, it seems that SDL2 will
+             // only re-do the orientation when changing whether a window is
+@@ -2496,7 +2525,7 @@ pub fn show_error_messagebox(window: Option<&Window>, error_message: &str) {
+ /// - status: [BatteryState] - the current status of the battery
+ ///   (unplugged, charging, full, etc.)
+ pub fn get_battery_status() -> (i32, BatteryState) {
+-    if env::consts::OS == "android" {
++    if matches!(env::consts::OS, "android" | "ios") {
+         log_once!(
+             "Warning: get_battery_status on Android, returning fully charged to avoid SDL crash"
+         );
+@@ -2538,3 +2567,6 @@ pub fn get_preferred_country_codes(env: &mut Environment) -> Vec<String> {
+             .collect()
+     })
+ }
++
++#[cfg(target_os = "ios")]
++extern "C" { fn mpr_prepare_present(); }

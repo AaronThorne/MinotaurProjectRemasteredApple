@@ -24,6 +24,8 @@ Gridrunner · Super Ox Wars · Minotron: 2112 · Minotaur Rescue · Five A Day �
 - **iPad and iPhone.** Build and sign the universal app for your device using Xcode and your own Apple development team. The [build guide](docs/BUILDING.md) covers the steps and supported game assets. The maintainer playtested on iPad Pro and iPhone 17 Pro Max.
 - **Windows and Steam Deck.** See [the original Windows collection](https://github.com/jedeyesniv-art/MinotaurProjectRemastered).
 
+There are no current plans for an App Store release. The original games and artwork belong to Llamasoft and their respective rights holders, and an App Store release that includes them would need their permission.
+
 ### First launch on macOS
 
 The Mac release is signed with Developer ID and notarised by Apple. The notarisation ticket is attached to the app, so you can open it normally from Applications.

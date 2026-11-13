@@ -35,6 +35,8 @@ The Mac release is signed with Developer ID and notarised by Apple. The notarisa
 
 The picker’s **Info → Joystick** tab lists the per-game mappings. Controller **Back** and keyboard **Esc** depend on the game and the current screen. See the [controller guide](docs/CONTROLLERS.md) and [troubleshooting](docs/TROUBLESHOOTING.md).
 
+See the [original Windows collection artwork](docs/WINDOWS-ARTWORK.md) and follow the [conceptAlpha devlog](https://conceptalpha.co.uk/blog/).
+
 ## From Windows to Apple Silicon
 
 This started with [jedeyesniv-art’s Minotaur Project Remastered](https://github.com/jedeyesniv-art/MinotaurProjectRemastered), which runs the original 32-bit iPad games on Windows using a [modified touchHLE runtime](https://github.com/jedeyesniv-art/MinotaurProjectRemastered-touchHLE). The Apple adaptation uses that runtime’s source, controller mappings and compatibility work. The Windows distribution can supply the original game assets during setup. The importer reads the bundled archives directly.

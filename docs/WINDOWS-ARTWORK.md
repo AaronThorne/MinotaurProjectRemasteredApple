@@ -6,4 +6,4 @@ These promotional images come from [jedeyesniv-art’s Windows release](https://
 
 ![Library hero artwork for the Windows collection](https://raw.githubusercontent.com/jedeyesniv-art/MinotaurProjectRemastered/cb8db99c6dcf922241f26142ca6708fbb903862b/art/hero.png)
 
-Follow Aaron’s development posts on the [conceptAlpha devlog](https://conceptalpha.co.uk/blog/).
+Read [Aaron’s conceptAlpha post about the Apple port](https://conceptalpha.co.uk/bringing-llamasofts-minotaur-project-back-to-apple-devices/).

@@ -35,7 +35,7 @@ The Mac release is signed with Developer ID and notarised by Apple. The notarisa
 
 The picker’s **Info → Joystick** tab lists the per-game mappings. Controller **Back** and keyboard **Esc** depend on the game and the current screen. See the [controller guide](docs/CONTROLLERS.md) and [troubleshooting](docs/TROUBLESHOOTING.md).
 
-See the [original Windows collection artwork](docs/WINDOWS-ARTWORK.md) and follow the [conceptAlpha devlog](https://conceptalpha.co.uk/blog/).
+See the [original Windows collection artwork](docs/WINDOWS-ARTWORK.md) and read [the story behind the Apple port on conceptAlpha](https://conceptalpha.co.uk/bringing-llamasofts-minotaur-project-back-to-apple-devices/).
 
 ## From Windows to Apple Silicon
 

@@ -41,6 +41,8 @@ See the [original Windows collection artwork](docs/WINDOWS-ARTWORK.md) and read 
 
 ![The macOS game picker showing all nine Llamasoft games](docs/images/mac-game-picker.png)
 
+See [what changed in v1.4.13](docs/RELEASE-NOTES.md).
+
 ## From Windows to Apple Silicon
 
 This started with [jedeyesniv-art’s Minotaur Project Remastered](https://github.com/jedeyesniv-art/MinotaurProjectRemastered), which runs the original 32-bit iPad games on Windows using a [modified touchHLE runtime](https://github.com/jedeyesniv-art/MinotaurProjectRemastered-touchHLE). The Apple adaptation uses that runtime’s source, controller mappings and compatibility work. The Windows distribution can supply the original game assets during setup. The importer reads the bundled archives directly.

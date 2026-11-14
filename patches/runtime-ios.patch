@@ -539,7 +539,7 @@ index 8425a9c0..28d9786f 100644
      }
      let base_path = user_data_base_path();
 diff --git a/src/window.rs b/src/window.rs
-index 0898cb5..de98f8c 100644
+index 0898cb5..5b94855 100644
 --- a/src/window.rs
 +++ b/src/window.rs
 @@ -157,6 +157,12 @@ fn rotate_fullscreen_size(orientation: DeviceOrientation, screen_size: (u32, u32
@@ -601,7 +601,23 @@ index 0898cb5..de98f8c 100644
              // Sanity check
              let gl_attr = video_ctx.gl_attr();
              debug_assert_eq!(gl_attr.context_profile(), sdl2::video::GLProfile::GLES);
-@@ -867,10 +875,7 @@ impl Window {
+@@ -723,6 +731,15 @@ impl Window {
+             // Round to match touch precision of official devices.
+             (out_x.round(), out_y.round())
+         }
++        fn transform_finger_coords(window: &Window, coords: (f32, f32), extend: bool) -> (f32, f32) {
++            let (x, y) = transform_input_coords(window, finger_absolute_coords(window, coords), false);
++            if extend {
++                // Keep touches in the guest view even when the finger is in the margins.
++                let (width, height) = window.size_unrotated_unscaled();
++                return (x.clamp(0.0, width as f32 - 1.0), y.clamp(0.0, height as f32 - 1.0));
++            }
++            (x, y)
++        }
+         fn transform_virt_accel_coords(window: &Window, (in_x, in_y): (i32, i32)) -> (f32, f32) {
+             let (_, _, vw, vh) = window.viewport();
+             let out_x = ((in_x as f32 / vw as f32) * 2.0 - 1.0).clamp(-1.0, 1.0);
+@@ -867,10 +884,7 @@ impl Window {
                      &event
                  {
                      let down = matches!(event, E::ControllerButtonDown { .. });
@@ -613,7 +629,29 @@ index 0898cb5..de98f8c 100644
                          continue;
                      }
                      self.event_queue.push_back(Event::PadInput(PadInput::Button(*button), down));
-@@ -1356,7 +1361,7 @@ impl Window {
+@@ -1164,9 +1178,9 @@ impl Window {
+                     // UIKit, but could be broken if events come out of order.
+                     // (in worst case we separate multi-touches in several ones)
+                     // TODO: handle out of order touches
++                    let extend_touch = cfg!(target_os = "ios");
+                     let curr_timestamp = timestamp;
+-                    let abs_coords = finger_absolute_coords(self, (x, y));
+-                    let coords = transform_input_coords(self, abs_coords, false);
++                    let coords = transform_finger_coords(self, (x, y), extend_touch);
+                     log_dbg!("Finger event x {}, y {}, coords {:?}", x, y, coords);
+                     let mut map = HashMap::from([(FingerId::Touch(finger_id), coords)]);
+                     while let Some(next) = self.event_pump.poll_event() {
+@@ -1196,8 +1210,7 @@ impl Window {
+                                 y,
+                                 ..
+                             } if timestamp == curr_timestamp && next.is_same_kind_as(&event) => {
+-                                let abs_coords = finger_absolute_coords(self, (x, y));
+-                                let coords = transform_input_coords(self, abs_coords, false);
++                                let coords = transform_finger_coords(self, (x, y), extend_touch);
+                                 map.insert(FingerId::Touch(finger_id), coords);
+                             }
+                             E::MultiGesture { timestamp, .. } if timestamp == curr_timestamp => {
+@@ -1356,7 +1369,7 @@ impl Window {
              }
              log!("Pad {} (slot {}) is this player's.", controller_name, index);
          }
@@ -622,7 +660,7 @@ index 0898cb5..de98f8c 100644
              log!("ignoring fingerprint device: {}", controller_name);
              return;
          }
-@@ -1410,7 +1415,9 @@ impl Window {
+@@ -1410,7 +1423,9 @@ impl Window {
      /// See also [crate::frameworks::uikit::ui_accelerometer].
      pub fn get_acceleration(&self, options: &Options) -> (f32, f32, f32) {
          if let Some(degrees) = options.right_stick_tilt {
@@ -633,7 +671,7 @@ index 0898cb5..de98f8c 100644
          }
          if self.controllers.is_empty() || !options.analog_stick_tilt_controls {
              if let Some(ref accelerometer) = self.accelerometer {
-@@ -1961,8 +1968,13 @@ impl Window {
+@@ -1961,8 +1976,13 @@ impl Window {
                  attr.set_context_profile(sdl2::video::GLProfile::GLES);
              }
              GLVersion::GL21Compat => {
@@ -649,7 +687,7 @@ index 0898cb5..de98f8c 100644
              }
          }
  
-@@ -2072,6 +2084,8 @@ impl Window {
+@@ -2072,6 +2092,8 @@ impl Window {
              gl_ctx.DeleteTextures(1, &texture);
          };
  
@@ -658,7 +696,7 @@ index 0898cb5..de98f8c 100644
          self.window.gl_swap_window();
  
          // hold onto GL context so the image doesn't disappear, and hold
-@@ -2081,6 +2095,8 @@ impl Window {
+@@ -2081,6 +2103,8 @@ impl Window {
      /// Swap front-buffer and back-buffer so the result of OpenGL rendering is
      /// presented.
      pub fn swap_window(&self) {
@@ -667,7 +705,7 @@ index 0898cb5..de98f8c 100644
          self.window.gl_swap_window();
      }
  
-@@ -2098,10 +2114,7 @@ impl Window {
+@@ -2098,10 +2122,7 @@ impl Window {
          match *event {
              E::ControllerButtonUp { button, .. } | E::ControllerButtonDown { button, .. } => {
                  let down = matches!(event, E::ControllerButtonDown { .. });
@@ -679,7 +717,7 @@ index 0898cb5..de98f8c 100644
                      return Some(None);
                  }
                  Some(Some(Event::PadInput(PadInput::Button(button), down)))
-@@ -2175,6 +2188,22 @@ impl Window {
+@@ -2175,6 +2196,22 @@ impl Window {
          self.pad_cursor_enabled = on;
      }
  
@@ -702,7 +740,7 @@ index 0898cb5..de98f8c 100644
      fn pad_cursor_press(&mut self, down: bool) {
          if down == self.pad_cursor_pressed {
              return;
-@@ -2277,7 +2306,7 @@ impl Window {
+@@ -2277,7 +2314,7 @@ impl Window {
              self.window.set_size(width, height).unwrap();
          }
  
@@ -711,7 +749,7 @@ index 0898cb5..de98f8c 100644
              set_sdl2_orientation(new_orientation);
              // Hack: from reading SDL2's source code, it seems that SDL2 will
              // only re-do the orientation when changing whether a window is
-@@ -2496,7 +2525,7 @@ pub fn show_error_messagebox(window: Option<&Window>, error_message: &str) {
+@@ -2496,7 +2533,7 @@ pub fn show_error_messagebox(window: Option<&Window>, error_message: &str) {
  /// - status: [BatteryState] - the current status of the battery
  ///   (unplugged, charging, full, etc.)
  pub fn get_battery_status() -> (i32, BatteryState) {
@@ -720,10 +758,176 @@ index 0898cb5..de98f8c 100644
          log_once!(
              "Warning: get_battery_status on Android, returning fully charged to avoid SDL crash"
          );
-@@ -2538,3 +2567,6 @@ pub fn get_preferred_country_codes(env: &mut Environment) -> Vec<String> {
+@@ -2538,3 +2575,6 @@ pub fn get_preferred_country_codes(env: &mut Environment) -> Vec<String> {
              .collect()
      })
  }
 +
 +#[cfg(target_os = "ios")]
 +extern "C" { fn mpr_prepare_present(); }
+diff --git a/src/achievements.rs b/src/achievements.rs
+index 08e7836..738143f 100644
+--- a/src/achievements.rs
++++ b/src/achievements.rs
+@@ -21,8 +21,9 @@
+ //!
+ //! A new unlock (not one this player already has) also shows a banner at
+ //! the top of the picture for a few seconds ([banner], drawn by
+-//! `eagl.rs` with [crate::gles::present::draw_banner]), titled from the
+-//! launcher's `launcher_text.txt` beside the touchHLE folder.
++//! `eagl.rs` with [crate::gles::present::draw_banner]), showing the
++//! achievement's name: from the launcher's `launcher_text.txt` beside the
++//! touchHLE folder if it has one, otherwise from [BUILT_IN_TITLES].
+ 
+ use crate::frameworks::foundation::ns_string;
+ use crate::objc::{id, nil};
+@@ -116,9 +117,116 @@ pub fn record(env: &mut Environment, achievement: &str) {
+     }
+ }
+ 
++/// Achievement names from the Windows launcher and original games, by app ID and achievement
++/// ID, for when there's no `launcher_text.txt` (the Apple builds have none).
++///
++/// - Gridrunner: its goal names table (`0x6c560` in the ARM binary), in the
++///   order of its Game Center IDs (`0x69ab4`). Goal 10, "WELL DONE!", has
++///   no ID and is never awarded.
++const BUILT_IN_TITLES: &[(&str, &str, &str)] = &[
++    ("uk.co.llamasoft.gridrunner", "1531962", "MORE TEA VICAR!"),
++    ("uk.co.llamasoft.gridrunner", "1531972", "64 LOVE"),
++    ("uk.co.llamasoft.gridrunner", "1531982", "BULL!"),
++    ("uk.co.llamasoft.gridrunner", "1531992", "VIRGIN!"),
++    ("uk.co.llamasoft.gridrunner", "1532002", "WELCOME TO BLOBBYTOWN"),
++    ("uk.co.llamasoft.gridrunner", "1532012", "DARK SIDE OF THE BLOB"),
++    ("uk.co.llamasoft.gridrunner", "1532022", "SAUCERER"),
++    ("uk.co.llamasoft.gridrunner", "1532032", "LIFE MACHINE"),
++    ("uk.co.llamasoft.gridrunner", "1532042", "GLORY, GLORY, GLORY"),
++    ("uk.co.llamasoft.gridrunner", "1532052", "BLESSINGS OF JARVIS BE UPON THEE!"),
++
++    ("uk.co.llamasoft.minorescue", "737882", "Loveabull"),
++    ("uk.co.llamasoft.minorescue", "737892", "Manic Miner"),
++    ("uk.co.llamasoft.minorescue", "737902", "Valuabull"),
++    ("uk.co.llamasoft.minorescue", "737912", "Responsibull"),
++    ("uk.co.llamasoft.minorescue", "737922", "Irresistabull"),
++    ("uk.co.llamasoft.minorescue", "737932", "Matador"),
++    ("uk.co.llamasoft.minorescue", "737942", "Millionaire"),
++    ("uk.co.llamasoft.minorescue", "737972", "Warped!"),
++    ("uk.co.llamasoft.minorescue", "743042", "Horns Exalted"),
++    ("uk.co.llamasoft.minorescue", "743062", "Maxotaur"),
++
++    ("uk.co.llamasoft.minotron", "836152", "Sociabull"),
++    ("uk.co.llamasoft.minotron", "836162", "Companiabull"),
++    ("uk.co.llamasoft.minotron", "836172", "Innumerabull"),
++    ("uk.co.llamasoft.minotron", "836182", "You killed Kevin!"),
++    ("uk.co.llamasoft.minotron", "836192", "Flushed the bog!"),
++    ("uk.co.llamasoft.minotron", "836202", "Irrepressabull"),
++    ("uk.co.llamasoft.minotron", "836212", "Durabull"),
++    ("uk.co.llamasoft.minotron", "836222", "Invincibull"),
++    ("uk.co.llamasoft.minotron", "836232", "Dependabull"),
++    ("uk.co.llamasoft.minotron", "836242", "Powerupabull"),
++
++    ("uk.co.llamasoft.deflex", "1063292", "Minimalist"),
++    ("uk.co.llamasoft.deflex", "1063302", "Zen"),
++    ("uk.co.llamasoft.deflex", "1063312", "On Source"),
++    ("uk.co.llamasoft.deflex", "1063322", "Golden Age of Deflex"),
++    ("uk.co.llamasoft.deflex", "1063332", "Nice Multiplier"),
++    ("uk.co.llamasoft.deflex", "1063342", "Super Multiplier"),
++    ("uk.co.llamasoft.deflex", "1063352", "Three Bat Bulls"),
++    ("uk.co.llamasoft.deflex", "1063362", "Disappointed Minotaur"),
++    ("uk.co.llamasoft.deflex", "1063372", "Unlocky"),
++    ("uk.co.llamasoft.deflex", "1063382", "Ravished"),
++
++    ("uk.co.llamasoft.Goat", "1205922", "Fecundity"),
++    ("uk.co.llamasoft.Goat", "1205932", "Ultra-Fecundity"),
++    ("uk.co.llamasoft.Goat", "1205942", "Mountain Goat"),
++    ("uk.co.llamasoft.Goat", "1205952", "Homecoming"),
++    ("uk.co.llamasoft.Goat", "1205962", "Bop the Ox"),
++    ("uk.co.llamasoft.Goat", "1205972", "Super Mother"),
++    ("uk.co.llamasoft.Goat", "1205992", "Revenge"),
++    ("uk.co.llamasoft.Goat", "1206022", "Collector"),
++    ("uk.co.llamasoft.Goat", "1206042", "Hoarder"),
++    ("uk.co.llamasoft.Goat", "1206052", "Compulsive"),
++
++    ("uk.co.llamasoft.minos", "1461502", "Awesometastic"),
++    ("uk.co.llamasoft.minos", "1461492", "Minotaur Lord"),
++    ("uk.co.llamasoft.minos", "1461482", "Minotaur Lover"),
++    ("uk.co.llamasoft.minos", "1461472", "Mino Master"),
++    ("uk.co.llamasoft.minos", "1461462", "Ultra Pony"),
++    ("uk.co.llamasoft.minos", "1461452", "Super Pony"),
++    ("uk.co.llamasoft.minos", "1461442", "Ayyyyyup"),
++    ("uk.co.llamasoft.minos", "1461432", "Tone 40"),
++    ("uk.co.llamasoft.minos", "1461422", "Clear"),
++    ("uk.co.llamasoft.minos", "1461412", "Batty"),
++
++    ("uk.co.llamasoft.tp", "1597262", "Ultra Fruiterer"),
++    ("uk.co.llamasoft.tp", "1597242", "Taury Party"),
++    ("uk.co.llamasoft.tp", "1597212", "Galactic Greengrocer"),
++    ("uk.co.llamasoft.tp", "1597172", "Amen Breaker"),
++    ("uk.co.llamasoft.tp", "1597152", "Tilt-tastic!"),
++    ("uk.co.llamasoft.tp", "1597142", "Perfect Day"),
++    ("uk.co.llamasoft.tp", "1597132", "You so fruity!"),
++    ("uk.co.llamasoft.tp", "1597122", "Boanthrope Bonanza"),
++    ("uk.co.llamasoft.tp", "1597112", "Five A Day"),
++    ("uk.co.llamasoft.tp", "1597102", "Fresh!"),
++
++    ("uk.co.llamasoft.sf", "sow_ach0", "FOXTROT"),
++    ("uk.co.llamasoft.sf", "sow_ach1", "TORCEDOR APAIXONADO"),
++    ("uk.co.llamasoft.sf", "sow_ach2", "CHAMPION!"),
++    ("uk.co.llamasoft.sf", "sow_ach3", "PIP PIP HOORAY!"),
++    ("uk.co.llamasoft.sf", "sow_ach4", "MAXIMUM FIREPOWER"),
++    ("uk.co.llamasoft.sf", "sow_ach5", "GOOD GOOD"),
++    ("uk.co.llamasoft.sf", "sow_ach7", "JOURNEY"),
++    ("uk.co.llamasoft.sf", "sow_ach8", "NEUTRAL"),
++    ("uk.co.llamasoft.sf", "sow_ach9", "CAPRICHOSO 4 LIFE"),
++    ("uk.co.llamasoft.sf", "sow_ach10", "GARANTIDO 4 LIFE"),
++];
++
++/// The achievement's title: from the launcher's words if they have it,
++/// otherwise from [BUILT_IN_TITLES].
++fn title(app_id: &str, achievement: &str) -> Option<String> {
++    launcher_title(app_id, achievement).or_else(|| {
++        BUILT_IN_TITLES
++            .iter()
++            .find(|(app, id, _)| *app == app_id && *id == achievement)
++            .map(|(_, _, title)| title.to_string())
++    })
++}
++
+ /// The achievement's title from the launcher's words ("achievement ID:
+ /// Title | goal" in the game's section), if it can be found.
+-fn title(app_id: &str, achievement: &str) -> Option<String> {
++fn launcher_title(app_id: &str, achievement: &str) -> Option<String> {
+     let base = crate::paths::user_data_base_path();
+     let text = std::fs::read_to_string(base.parent()?.join("launcher_text.txt")).ok()?;
+     let mut in_game = false;
+@@ -180,12 +288,12 @@ fn show_banner(title: &Option<String>) {
+         });
+     };
+     let font = Font::sans_bold();
+-    match title {
+-        Some(title) => {
+-            text(&font, 34.0, "ACHIEVEMENT UNLOCKED", 24.0, [1.0, 0.8, 0.3]);
+-            text(&font, 60.0, title, 78.0, [1.0, 1.0, 1.0]);
+-        }
+-        None => text(&font, 60.0, "Achievement unlocked!", 52.0, [1.0, 0.8, 0.3]),
++    text(&font, 34.0, "Achievement earned!", if title.is_some() { 24.0 } else { 60.0 }, [1.0, 0.8, 0.3]);
++    if let Some(line) = title.as_deref() {
++        let room = w as f32 - 2.0 * (radius + 24.0);
++        let width = font.calculate_text_size(60.0, line, None).0;
++        let size = if width > room { 60.0 * room / width } else { 60.0 };
++        text(&font, size, line, 78.0 + (60.0 - size) / 2.0, [1.0, 1.0, 1.0]);
+     }
+     let bytes = px.iter().map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8).collect();
+     static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+diff --git a/touchHLE_options.txt b/touchHLE_options.txt
+index 56c274b..bc9c6dd 100644
+--- a/touchHLE_options.txt
++++ b/touchHLE_options.txt
+@@ -24,7 +24,7 @@ uk.co.llamasoft.minos: --alloc-padding=16 --device-family=ipad --dpi-aware --sha
+ # Goat Up
+ uk.co.llamasoft.Goat: --alloc-padding=16 --device-family=ipad --dpi-aware --sharp-scaling --fake-classes=OF --goat-pad --left-stick-tilt=20 --deadzone=0.12 --starfield-bars --record-scores --record-achievements
+ # Goat Up 2
+-co.uk.llamasoft.Grunt: --alloc-padding=16 --device-family=ipad --dpi-aware --sharp-scaling --audio-resampler=bsinc24 --volume=0.5 --goat2-pad --left-stick-tilt=20 --deadzone=0.12 --starfield-bars=warp --trim-edges=2 --record-scores
++co.uk.llamasoft.Grunt: --alloc-padding=16 --device-family=ipad --dpi-aware --sharp-scaling --audio-resampler=bsinc24 --volume=0.5 --goat2-pad --left-stick-tilt=20 --deadzone=0.12 --starfield-bars=warp --trim-edges=2 --record-scores --record-achievements
+ # Minotaur Rescue (iOS)
+ uk.co.llamasoft.minorescue: --device-family=ipad --dpi-aware --sharp-scaling --fake-classes=OF --audio-resampler=bsinc24 --alloc-padding=16 --ambient-bars --fullscreen --rescue-pad --rescue-turn-fix --disable-analog-stick-tilt-controls --record-scores --record-achievements
+ # Minotron 2112 (iOS)

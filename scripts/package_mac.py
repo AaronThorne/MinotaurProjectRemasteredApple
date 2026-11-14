@@ -28,7 +28,7 @@ def package():
         for target in [mac/'GridrunnerAOT',helper]:subprocess.run(['codesign','--force','--sign','-',str(target)],check=True)
         count+=1
     if not count:raise SystemExit('No compiled engines found. Run scripts/build.py macos first.')
-    info={'CFBundleName':'Minotaur Project','CFBundleDisplayName':'Minotaur Project','CFBundleIdentifier':'local.minotaur.apple.collection','CFBundleExecutable':'MinotaurRecompiled','CFBundlePackageType':'APPL','CFBundleShortVersionString':'1.4.12','CFBundleVersion':'17','CFBundleIconFile':'AppIcon.icns','NSHighResolutionCapable':True,'LSMinimumSystemVersion':'13.0'}
+    info={'CFBundleName':'Minotaur Project','CFBundleDisplayName':'Minotaur Project','CFBundleIdentifier':'local.minotaur.apple.collection','CFBundleExecutable':'MinotaurRecompiled','CFBundlePackageType':'APPL','CFBundleShortVersionString':'1.4.13','CFBundleVersion':'21','CFBundleIconFile':'AppIcon.icns','NSHighResolutionCapable':True,'LSMinimumSystemVersion':'13.0'}
     (contents/'Info.plist').write_bytes(plistlib.dumps(info))
     shutil.copy2(ROOT/'CREDITS.md',resources/'Credits.txt')
     subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)

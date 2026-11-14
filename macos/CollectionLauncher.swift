@@ -27,6 +27,7 @@ final class PickerView: NSView {
     var tiles=[GameTile]()
     let infoButton = NSButton(title: "Info", target: nil, action: nil)
     let footer=NSTextField(wrappingLabelWithString:"Llamasoft classics · Apple Silicon\nGames by Llamasoft · touchHLE compatibility layer")
+    private let versionLabel = NSTextField(labelWithString: "Version " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"))
     private var clock: Timer?
     var running=false { didSet { updateAnimation() } }
     override var isFlipped: Bool { true }
@@ -37,6 +38,10 @@ final class PickerView: NSView {
         bling.setAccessibilityElement(true);bling.setAccessibilityLabel("Minotaur Project")
         footer.alignment = .center;footer.textColor = .lightGray;footer.font = .systemFont(ofSize:13)
         footer.isSelectable=false;addSubview(footer)
+        versionLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        versionLabel.textColor = .lightGray
+        versionLabel.alignment = .right
+        addSubview(versionLabel)
         infoButton.bezelStyle = .rounded
         infoButton.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)
         infoButton.imagePosition = .imageLeading
@@ -67,6 +72,7 @@ final class PickerView: NSView {
             tile.frame=NSRect(x:x+CGFloat(i%3)*(tileWidth+columnGap),y:y+202+CGFloat(i/3)*(tileHeight+gap),width:tileWidth,height:tileHeight)
         }
         footer.frame=NSRect(x:x,y:y+height-40,width:width,height:40)
+        versionLabel.frame = NSRect(x: bounds.width - 112, y: bounds.height - 24, width: 96, height: 16)
         infoButton.frame = NSRect(x: bounds.width - 104, y: 12, width: 88, height: 34)
     }
 }

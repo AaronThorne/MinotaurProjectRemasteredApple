@@ -159,6 +159,14 @@ void mpr_prepare_present(void) {
     [info addTarget:self action:@selector(showInfo) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:info];
 
+    NSString *version = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    UILabel *versionLabel = [[UILabel alloc] init];
+    versionLabel.text = [NSString stringWithFormat:@"Version %@", version ?: @"—"];
+    versionLabel.font = [UIFont monospacedDigitSystemFontOfSize:10 weight:UIFontWeightRegular];
+    versionLabel.textColor = UIColor.lightGrayColor;
+    versionLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:versionLabel];
+
     self.pickerContent = [[UILayoutGuide alloc] init];
     [self.view addLayoutGuide:self.pickerContent];
     [NSLayoutConstraint activateConstraints:@[
@@ -166,7 +174,9 @@ void mpr_prepare_present(void) {
         [info.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor constant:-16],
         [info.heightAnchor constraintGreaterThanOrEqualToConstant:44],
         [self.pickerContent.topAnchor constraintEqualToAnchor:info.bottomAnchor constant:4],
-        [self.pickerContent.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor],
+        [versionLabel.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor constant:-16],
+        [versionLabel.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-4],
+        [self.pickerContent.bottomAnchor constraintEqualToAnchor:versionLabel.topAnchor constant:-4],
         [self.pickerContent.leadingAnchor constraintEqualToAnchor:safeArea.leadingAnchor],
         [self.pickerContent.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor],
     ]];

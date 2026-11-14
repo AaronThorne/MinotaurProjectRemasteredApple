@@ -221,3 +221,169 @@ index 0898cb5..d004ffe 100644
      fn pad_cursor_press(&mut self, down: bool) {
          if down == self.pad_cursor_pressed {
              return;
+diff --git a/src/achievements.rs b/src/achievements.rs
+index 08e7836..738143f 100644
+--- a/src/achievements.rs
++++ b/src/achievements.rs
+@@ -21,8 +21,9 @@
+ //!
+ //! A new unlock (not one this player already has) also shows a banner at
+ //! the top of the picture for a few seconds ([banner], drawn by
+-//! `eagl.rs` with [crate::gles::present::draw_banner]), titled from the
+-//! launcher's `launcher_text.txt` beside the touchHLE folder.
++//! `eagl.rs` with [crate::gles::present::draw_banner]), showing the
++//! achievement's name: from the launcher's `launcher_text.txt` beside the
++//! touchHLE folder if it has one, otherwise from [BUILT_IN_TITLES].
+ 
+ use crate::frameworks::foundation::ns_string;
+ use crate::objc::{id, nil};
+@@ -116,9 +117,116 @@ pub fn record(env: &mut Environment, achievement: &str) {
+     }
+ }
+ 
++/// Achievement names from the Windows launcher and original games, by app ID and achievement
++/// ID, for when there's no `launcher_text.txt` (the Apple builds have none).
++///
++/// - Gridrunner: its goal names table (`0x6c560` in the ARM binary), in the
++///   order of its Game Center IDs (`0x69ab4`). Goal 10, "WELL DONE!", has
++///   no ID and is never awarded.
++const BUILT_IN_TITLES: &[(&str, &str, &str)] = &[
++    ("uk.co.llamasoft.gridrunner", "1531962", "MORE TEA VICAR!"),
++    ("uk.co.llamasoft.gridrunner", "1531972", "64 LOVE"),
++    ("uk.co.llamasoft.gridrunner", "1531982", "BULL!"),
++    ("uk.co.llamasoft.gridrunner", "1531992", "VIRGIN!"),
++    ("uk.co.llamasoft.gridrunner", "1532002", "WELCOME TO BLOBBYTOWN"),
++    ("uk.co.llamasoft.gridrunner", "1532012", "DARK SIDE OF THE BLOB"),
++    ("uk.co.llamasoft.gridrunner", "1532022", "SAUCERER"),
++    ("uk.co.llamasoft.gridrunner", "1532032", "LIFE MACHINE"),
++    ("uk.co.llamasoft.gridrunner", "1532042", "GLORY, GLORY, GLORY"),
++    ("uk.co.llamasoft.gridrunner", "1532052", "BLESSINGS OF JARVIS BE UPON THEE!"),
++
++    ("uk.co.llamasoft.minorescue", "737882", "Loveabull"),
++    ("uk.co.llamasoft.minorescue", "737892", "Manic Miner"),
++    ("uk.co.llamasoft.minorescue", "737902", "Valuabull"),
++    ("uk.co.llamasoft.minorescue", "737912", "Responsibull"),
++    ("uk.co.llamasoft.minorescue", "737922", "Irresistabull"),
++    ("uk.co.llamasoft.minorescue", "737932", "Matador"),
++    ("uk.co.llamasoft.minorescue", "737942", "Millionaire"),
++    ("uk.co.llamasoft.minorescue", "737972", "Warped!"),
++    ("uk.co.llamasoft.minorescue", "743042", "Horns Exalted"),
++    ("uk.co.llamasoft.minorescue", "743062", "Maxotaur"),
++
++    ("uk.co.llamasoft.minotron", "836152", "Sociabull"),
++    ("uk.co.llamasoft.minotron", "836162", "Companiabull"),
++    ("uk.co.llamasoft.minotron", "836172", "Innumerabull"),
++    ("uk.co.llamasoft.minotron", "836182", "You killed Kevin!"),
++    ("uk.co.llamasoft.minotron", "836192", "Flushed the bog!"),
++    ("uk.co.llamasoft.minotron", "836202", "Irrepressabull"),
++    ("uk.co.llamasoft.minotron", "836212", "Durabull"),
++    ("uk.co.llamasoft.minotron", "836222", "Invincibull"),
++    ("uk.co.llamasoft.minotron", "836232", "Dependabull"),
++    ("uk.co.llamasoft.minotron", "836242", "Powerupabull"),
++
++    ("uk.co.llamasoft.deflex", "1063292", "Minimalist"),
++    ("uk.co.llamasoft.deflex", "1063302", "Zen"),
++    ("uk.co.llamasoft.deflex", "1063312", "On Source"),
++    ("uk.co.llamasoft.deflex", "1063322", "Golden Age of Deflex"),
++    ("uk.co.llamasoft.deflex", "1063332", "Nice Multiplier"),
++    ("uk.co.llamasoft.deflex", "1063342", "Super Multiplier"),
++    ("uk.co.llamasoft.deflex", "1063352", "Three Bat Bulls"),
++    ("uk.co.llamasoft.deflex", "1063362", "Disappointed Minotaur"),
++    ("uk.co.llamasoft.deflex", "1063372", "Unlocky"),
++    ("uk.co.llamasoft.deflex", "1063382", "Ravished"),
++
++    ("uk.co.llamasoft.Goat", "1205922", "Fecundity"),
++    ("uk.co.llamasoft.Goat", "1205932", "Ultra-Fecundity"),
++    ("uk.co.llamasoft.Goat", "1205942", "Mountain Goat"),
++    ("uk.co.llamasoft.Goat", "1205952", "Homecoming"),
++    ("uk.co.llamasoft.Goat", "1205962", "Bop the Ox"),
++    ("uk.co.llamasoft.Goat", "1205972", "Super Mother"),
++    ("uk.co.llamasoft.Goat", "1205992", "Revenge"),
++    ("uk.co.llamasoft.Goat", "1206022", "Collector"),
++    ("uk.co.llamasoft.Goat", "1206042", "Hoarder"),
++    ("uk.co.llamasoft.Goat", "1206052", "Compulsive"),
++
++    ("uk.co.llamasoft.minos", "1461502", "Awesometastic"),
++    ("uk.co.llamasoft.minos", "1461492", "Minotaur Lord"),
++    ("uk.co.llamasoft.minos", "1461482", "Minotaur Lover"),
++    ("uk.co.llamasoft.minos", "1461472", "Mino Master"),
++    ("uk.co.llamasoft.minos", "1461462", "Ultra Pony"),
++    ("uk.co.llamasoft.minos", "1461452", "Super Pony"),
++    ("uk.co.llamasoft.minos", "1461442", "Ayyyyyup"),
++    ("uk.co.llamasoft.minos", "1461432", "Tone 40"),
++    ("uk.co.llamasoft.minos", "1461422", "Clear"),
++    ("uk.co.llamasoft.minos", "1461412", "Batty"),
++
++    ("uk.co.llamasoft.tp", "1597262", "Ultra Fruiterer"),
++    ("uk.co.llamasoft.tp", "1597242", "Taury Party"),
++    ("uk.co.llamasoft.tp", "1597212", "Galactic Greengrocer"),
++    ("uk.co.llamasoft.tp", "1597172", "Amen Breaker"),
++    ("uk.co.llamasoft.tp", "1597152", "Tilt-tastic!"),
++    ("uk.co.llamasoft.tp", "1597142", "Perfect Day"),
++    ("uk.co.llamasoft.tp", "1597132", "You so fruity!"),
++    ("uk.co.llamasoft.tp", "1597122", "Boanthrope Bonanza"),
++    ("uk.co.llamasoft.tp", "1597112", "Five A Day"),
++    ("uk.co.llamasoft.tp", "1597102", "Fresh!"),
++
++    ("uk.co.llamasoft.sf", "sow_ach0", "FOXTROT"),
++    ("uk.co.llamasoft.sf", "sow_ach1", "TORCEDOR APAIXONADO"),
++    ("uk.co.llamasoft.sf", "sow_ach2", "CHAMPION!"),
++    ("uk.co.llamasoft.sf", "sow_ach3", "PIP PIP HOORAY!"),
++    ("uk.co.llamasoft.sf", "sow_ach4", "MAXIMUM FIREPOWER"),
++    ("uk.co.llamasoft.sf", "sow_ach5", "GOOD GOOD"),
++    ("uk.co.llamasoft.sf", "sow_ach7", "JOURNEY"),
++    ("uk.co.llamasoft.sf", "sow_ach8", "NEUTRAL"),
++    ("uk.co.llamasoft.sf", "sow_ach9", "CAPRICHOSO 4 LIFE"),
++    ("uk.co.llamasoft.sf", "sow_ach10", "GARANTIDO 4 LIFE"),
++];
++
++/// The achievement's title: from the launcher's words if they have it,
++/// otherwise from [BUILT_IN_TITLES].
++fn title(app_id: &str, achievement: &str) -> Option<String> {
++    launcher_title(app_id, achievement).or_else(|| {
++        BUILT_IN_TITLES
++            .iter()
++            .find(|(app, id, _)| *app == app_id && *id == achievement)
++            .map(|(_, _, title)| title.to_string())
++    })
++}
++
+ /// The achievement's title from the launcher's words ("achievement ID:
+ /// Title | goal" in the game's section), if it can be found.
+-fn title(app_id: &str, achievement: &str) -> Option<String> {
++fn launcher_title(app_id: &str, achievement: &str) -> Option<String> {
+     let base = crate::paths::user_data_base_path();
+     let text = std::fs::read_to_string(base.parent()?.join("launcher_text.txt")).ok()?;
+     let mut in_game = false;
+@@ -180,12 +288,12 @@ fn show_banner(title: &Option<String>) {
+         });
+     };
+     let font = Font::sans_bold();
+-    match title {
+-        Some(title) => {
+-            text(&font, 34.0, "ACHIEVEMENT UNLOCKED", 24.0, [1.0, 0.8, 0.3]);
+-            text(&font, 60.0, title, 78.0, [1.0, 1.0, 1.0]);
+-        }
+-        None => text(&font, 60.0, "Achievement unlocked!", 52.0, [1.0, 0.8, 0.3]),
++    text(&font, 34.0, "Achievement earned!", if title.is_some() { 24.0 } else { 60.0 }, [1.0, 0.8, 0.3]);
++    if let Some(line) = title.as_deref() {
++        let room = w as f32 - 2.0 * (radius + 24.0);
++        let width = font.calculate_text_size(60.0, line, None).0;
++        let size = if width > room { 60.0 * room / width } else { 60.0 };
++        text(&font, size, line, 78.0 + (60.0 - size) / 2.0, [1.0, 1.0, 1.0]);
+     }
+     let bytes = px.iter().map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8).collect();
+     static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+diff --git a/touchHLE_options.txt b/touchHLE_options.txt
+index 56c274b..bc9c6dd 100644
+--- a/touchHLE_options.txt
++++ b/touchHLE_options.txt
+@@ -24,7 +24,7 @@ uk.co.llamasoft.minos: --alloc-padding=16 --device-family=ipad --dpi-aware --sha
+ # Goat Up
+ uk.co.llamasoft.Goat: --alloc-padding=16 --device-family=ipad --dpi-aware --sharp-scaling --fake-classes=OF --goat-pad --left-stick-tilt=20 --deadzone=0.12 --starfield-bars --record-scores --record-achievements
+ # Goat Up 2
+-co.uk.llamasoft.Grunt: --alloc-padding=16 --device-family=ipad --dpi-aware --sharp-scaling --audio-resampler=bsinc24 --volume=0.5 --goat2-pad --left-stick-tilt=20 --deadzone=0.12 --starfield-bars=warp --trim-edges=2 --record-scores
++co.uk.llamasoft.Grunt: --alloc-padding=16 --device-family=ipad --dpi-aware --sharp-scaling --audio-resampler=bsinc24 --volume=0.5 --goat2-pad --left-stick-tilt=20 --deadzone=0.12 --starfield-bars=warp --trim-edges=2 --record-scores --record-achievements
+ # Minotaur Rescue (iOS)
+ uk.co.llamasoft.minorescue: --device-family=ipad --dpi-aware --sharp-scaling --fake-classes=OF --audio-resampler=bsinc24 --alloc-padding=16 --ambient-bars --fullscreen --rescue-pad --rescue-turn-fix --disable-analog-stick-tilt-controls --record-scores --record-achievements
+ # Minotron 2112 (iOS)
